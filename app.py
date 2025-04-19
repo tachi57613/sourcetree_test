@@ -1,5 +1,6 @@
 import os
 import requests
+import random
 import openai
 import streamlit as st
 from newspaper import Article
