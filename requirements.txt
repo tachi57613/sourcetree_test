@@ -2,6 +2,6 @@ streamlit
 openai
 gspread
 oauth2client
-pandas
 newspaper3k
 requests
+lxml>=4.9.3
