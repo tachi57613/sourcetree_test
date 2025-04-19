@@ -2,6 +2,6 @@ streamlit
 openai
 gspread
 oauth2client
-newspaper3k
 requests
-lxml>=4.9.3
+newspaper3k==0.2.8
+lxml==4.9.3
