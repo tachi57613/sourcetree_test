@@ -8,8 +8,6 @@ from datetime import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from google.oauth2.service_account import Credentials
-import uuid
-from utils.sheets import connect_to_sheets_by_id, get_dataframe
 import pandas as pd
 
 # 🔐 APIキー（差し替えてください）
