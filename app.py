@@ -196,20 +196,28 @@ def summarize_description_with_gpt(client, description):
     return generate_topic(client, prompt)
 
 # TOPIC一覧画面
-def show_topic_list_page(sheet):
-    st.title("📝 TOPIC 一覧")
-    topics = load_topics_from_sheet(sheet)
-    people = ["たっちーさん", "さんこんさん", "りじちょー", "List item 1", "List item 2"]
-    for title, content in topics.items():
-        st.markdown(f"#### 💡 {title}")
-        st.markdown(f"{content}")
-        st.markdown("**👥 話した人チェック**")
-        for person in people:
-            col1, col2 = st.columns([0.85, 0.15])
-            with col1:
-                st.write(f"👤 {person}")
-            with col2:
-                st.checkbox("", key=f"{title}_{person}")
+def show_topic_list_page(topics_sheet, talk_logs_sheet, persons_sheet):
+    st.header("📝 TOPIC 一覧")
+    topics = topics_sheet.get_all_records()
+    talk_logs = talk_logs_sheet.get_all_records()
+    persons = persons_sheet.get_all_records()
+
+    topic_to_persons = {}
+    for log in talk_logs:
+        tid = str(log["topic_id"])
+        pid = log["person_id"]
+        if tid not in topic_to_persons:
+            topic_to_persons[tid] = []
+        topic_to_persons[tid].append(pid)
+
+    person_map = {str(p["person_id"]): p["name"] for p in persons}
+
+    for t in topics:
+        tid = str(t["topic_id"])
+        st.markdown(f"### 💡 {t['title']}")
+        st.write(t["content"])
+        if tid in topic_to_persons:
+            st.markdown("**👥 話す人：** " + ", ".join(["✅ " + person_map.get(str(pid), "不明")+ "さん" for pid in topic_to_persons[tid]]))
         st.markdown("---")
 
 # === topicsシートに保存 ===
@@ -421,10 +429,7 @@ def main():
     if page == "ホーム":
         show_home_page(client)
     elif page == "TOPIC一覧":
-       if sheets and "topics" in sheets:
-            show_topic_list_page(sheets["topics"])
-       else:
-            st.error("スプレッドシートが読み込めませんでした。")
+       show_topic_list_page(sheets["topics"], sheets["talk_logs"], sheets["persons"])
 
     elif page == "ネタ生成":
         st.title("🎙️ 雑談ネタ生成")
