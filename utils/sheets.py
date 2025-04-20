@@ -2,6 +2,8 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import streamlit as st
+from oauth2client.service_account import ServiceAccountCredentials
+
 
 def connect_to_sheets_by_id(spreadsheet_id):
     scopes = ['https://www.googleapis.com/auth/spreadsheets']
