@@ -1,6 +1,6 @@
 import os
-import requests
 import random
+import requests
 import openai
 import streamlit as st
 from newspaper import Article
@@ -8,8 +8,11 @@ from datetime import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from google.oauth2.service_account import Credentials
+import uuid
+from utils.sheets import connect_to_sheets_by_id, get_dataframe
+import pandas as pd
 
-# === OpenAI APIキー ===
+# 🔐 APIキー（差し替えてください）
 OPENAI_API_KEY = st.secrets["openai_api_key"]
 NEWS_API_KEY = st.secrets["news_api_key"]
 WEATHER_API_KEY = st.secrets["weather_api_key"]
@@ -151,9 +154,18 @@ def generate_news_only_topic(client):
     )
     return generate_topic(client, prompt)
 
+def generate_keyword_topic(client, keyword):
+    prompt = (
+        f"キーワード「{keyword}」に関連する雑談ネタを3つ提案してください。\n"
+        f"それぞれ以下の形式で出力してください：\n"
+        f"---\nタイトル: ○○\nカテゴリ: ○○\n内容: ○○\n---"
+    )
+    return generate_topic(client, prompt)
+
+
 # ホーム画面（翻訳ニュース＋天気詳細）
 def show_home_page(client):
-    st.title("🗂 雑談管理アプリ")
+    st.title("🚀 LaunchTalk")
     st.button("🟥 他のネタを探す", use_container_width=True)
 
     news_list = get_news_full()
@@ -175,6 +187,15 @@ def show_home_page(client):
         st.image(icon_url, width=64)
     st.success(f"現在の天気は「{condition}」です")
     st.info(f"☔ 降水確率：午前 {am_rain}% ／ 午後 {pm_rain}%")
+
+def summarize_description_with_gpt(client, description):
+    if not description:
+        return "（要約する内容がありません）"
+    prompt = (
+        f"以下のニュースの概要を日本語で、500文字以内に自然に要約してください：\n\n{description}\n\n"
+        "※難しい表現は避け、日常会話で使えるようにしてください。"
+    )
+    return generate_topic(client, prompt)
 
 # TOPIC一覧画面
 def show_topic_list_page(sheet):
@@ -277,22 +298,44 @@ def show_persons_detail_page(sheets):
     person_name = persons_df[persons_df["person_id"] == person_id]["name"].values[0]
     st.title(f"🗣 {person_name} さんのトピック管理")
 
-    # ✅ ここから下、全部インデントしてください！
     person_logs = talk_log_df[talk_log_df["person_id"] == person_id]
     merged_df = pd.merge(person_logs, topics_df, on="topic_id")
+    merged_df = merged_df.drop_duplicates(subset=["topic_id", "person_id"])
     merged_df["talked_flag"] = merged_df["talked"].isin(["TRUE", True])
     merged_df = merged_df.sort_values("talked_flag")
+
 
     for _, row in merged_df.iterrows():
         is_talked = row["talked_flag"]
         bg_color = "#eeeeee" if is_talked else "#ffffff"
 
-        new_state = st.checkbox(
-            f"{row['title']}",
-            value=is_talked,
-            key=f"{row['topic_id']}",
-            help="チェックすると話したことになります 💬"
-        )
+        col1, col2, col3 = st.columns([6, 1, 1])  # 横並び：チェック＋タイトル、編集、削除
+
+        with col1:
+            new_state = st.checkbox(f"{row['title']}", value=is_talked, key=f"chk_{row['topic_id']}_{person_id}", help="チェックすると話したことになります 💬")
+            if new_state != is_talked:
+                talk_log_df.loc[
+                    (talk_log_df["topic_id"] == row["topic_id"]) &
+                    (talk_log_df["person_id"] == person_id),
+                    "talked"
+                ] = "TRUE" if new_state else "FALSE"
+
+        with col2:
+            if st.button("✏️", key=f"edit_{row['topic_id']}_{person_id}"):
+                st.session_state["edit_topic_id"] = row["topic_id"]
+                st.session_state["page"] = "edit_topic"
+                st.rerun()
+            
+        with col3:
+            if st.button("🗑️", key=f"delete_{row['topic_id']}_{person_id}"):
+                talk_log_df = talk_log_df[
+                    ~( (talk_log_df["topic_id"] == row["topic_id"]) & 
+                       (talk_log_df["person_id"] == person_id) )
+                ]
+                update_dataframe(sheets["talk_logs"], talk_log_df)
+                st.success("削除しました")
+                st.rerun()
+
 
         st.markdown(
             f"<div style='background-color:{bg_color}; height:1px; margin-bottom:8px;'></div>",
@@ -310,14 +353,49 @@ def show_persons_detail_page(sheets):
         update_dataframe(sheets["talk_logs"], talk_log_df)
         st.success("保存しました！")
 
+def show_edit_topic_page(sheets):
+    topic_id = st.session_state.get("edit_topic_id")
+    if not topic_id:
+        st.warning("編集対象のトピックが選ばれていません。")
+        return
+
+    topics_df = get_dataframe(sheets["topics"])
+    topic_row = topics_df[topics_df["topic_id"] == topic_id]
+
+    if topic_row.empty:
+        st.warning("該当のトピックが見つかりません。")
+        return
+
+    topic = topic_row.iloc[0]
+    st.title("✏️ トピック編集")
+
+    new_title = st.text_input("タイトル", value=topic["title"])
+    new_category = st.text_input("カテゴリ", value=topic["category"])
+    new_content = st.text_area("内容", value=topic["content"])
+
+    if st.button("保存"):
+        topics_df.loc[topics_df["topic_id"] == topic_id, "title"] = new_title
+        topics_df.loc[topics_df["topic_id"] == topic_id, "category"] = new_category
+        topics_df.loc[topics_df["topic_id"] == topic_id, "content"] = new_content
+        update_dataframe(sheets["topics"], topics_df)
+        st.success("トピックを更新しました")
+        st.session_state.page = "person_detail"
+        st.rerun()
+
+    if st.button("← 戻る"):
+        st.session_state.page = "person_detail"
+        st.rerun()
+
+
 # === Streamlit UI ===
 def main():
     if "page" not in st.session_state:
         st.session_state.page = "ホーム"
 
-    if st.session_state.page != "person_detail":
-        selected = st.sidebar.selectbox("ページを選択", ["ホーム", "TOPIC一覧", "ネタ生成", "話す人一覧"])
-        st.session_state.page = selected
+    if st.session_state.page not in ["person_detail", "edit_topic"]:
+        selected = st.sidebar.selectbox("ページを選択", ["ホーム", "ネタ生成", "話す人一覧", "TOPIC一覧"])
+        if selected != st.session_state.page:
+            st.session_state.page = selected
 
     page = st.session_state.page
 
@@ -349,6 +427,7 @@ def main():
             show_topic_list_page(sheets["topics"])
        else:
             st.error("スプレッドシートが読み込めませんでした。")
+
     elif page == "ネタ生成":
         st.title("🎙️ 雑談ネタ生成")
          # グループと人物選択
@@ -362,12 +441,29 @@ def main():
         selected_person_name = st.selectbox("話した相手を選択：", person_names)
         person = next(p for p in group_persons if p["name"] == selected_person_name)
 
-        mode = st.radio("ネタの種類：", ("天気ネタ", "ニュースネタ"))
-        city = st.text_input("都市名（天気ネタ用）", "Tokyo")
+        with st.form("generate_form"):
+            mode = st.radio("ネタの種類：", ("天気ネタ", "ニュースネタ", "キーワードネタ"))
+            japan_cities = {
+            "東京": "Tokyo", "大阪": "Osaka", "名古屋": "Nagoya", "札幌": "Sapporo",
+            "福岡": "Fukuoka", "仙台": "Sendai", "広島": "Hiroshima", "那覇": "Naha",
+            "京都": "Kyoto", "横浜": "Yokohama", "神戸": "Kobe", "金沢": "Kanazawa",
+            "岡山": "Okayama-Shi", "高松": "Takamatsu-Shi"
+            }
+            selected_city_jp = st.selectbox("都市を選択（天気ネタ用）", list(japan_cities.keys()))
+            city = japan_cities[selected_city_jp]
+            keyword = st.text_input("キーワード（キーワードネタ用）")
+            submitted = st.form_submit_button("🧠 雑談ネタを生成")
 
-        if st.button("🧠 雑談ネタを生成"):
+
+        if submitted:
             with st.spinner("生成中..."):
-                result = generate_weather_only_topic(client, city) if mode.startswith("天気") else generate_news_only_topic(client)
+                if mode.startswith("天気"):
+                    result = generate_weather_only_topic(client, city)
+                elif mode.startswith("ニュース"):
+                    result = generate_news_only_topic(client)
+                else:
+                    result = generate_keyword_topic(client, keyword)
+            
             st.markdown("### ✅ 生成された雑談ネタ")
             st.markdown(result.replace("\n", "  \n"))
 
@@ -391,10 +487,12 @@ def main():
         else:
             st.error("読み込み失敗")
 
+    elif page == "edit_topic":
+        show_edit_topic_page(sheets)
+
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        st.error("アプリ実行エラー")
-        st.write(e)
+        st.error(f"アプリ実行時エラー: {e}")
