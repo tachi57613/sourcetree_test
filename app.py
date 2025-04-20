@@ -161,6 +161,7 @@ def generate_keyword_topic(client, keyword):
     return generate_topic(client, prompt)
 
 
+
 # ホーム画面（翻訳ニュース＋天気詳細）
 def show_home_page(client):
     st.title("🚀 LaunchTalk")
@@ -394,12 +395,64 @@ def show_edit_topic_page(sheets):
 
 
 # === Streamlit UI ===
+
+LOGO_URL = "https://raw.githubusercontent.com/tachi57613/sourcetree_test/main/appventure_logo.png"
+
+# サイドバー上部にロゴを表示（常時見える）
+st.sidebar.markdown(
+    f"""
+    <div class="sidebar-bottom-logo">
+        <img src="{LOGO_URL}" width="80" height="80" alt="Logo" style="border-radius: 50%; margin-bottom: 10px;">
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# 💡 デザイン適用
+st.markdown("""<style>
+        /* === サイドバー背景をロゴ色に合わせる === */
+    [data-testid="stSidebar"] {
+        background-color: 	#fdf7f2;
+    }
+
+    /* === メイン背景も淡いグレーに === */
+    .main {
+        background-color: #f9fbfd;
+    }
+
+    /* === ヘッダーや見出しカラー === */
+    h1, h2, h3 {
+        color: #204060;
+        font-weight: bold;
+        font-family: "Segoe UI", sans-serif;
+    }
+
+    /* === ボタンデザイン（ロゴに合わせて） === */
+    .stButton>button {
+        background-color: #5ca8c5;
+        color: white;
+        border-radius: 8px;
+        padding: 0.5em 1.2em;
+        font-weight: bold;
+        font-family: "Segoe UI", sans-serif;
+    }
+
+    /* === ラジオボタン・選択肢のフォント調整 === */
+    label, span, .stRadio label {
+        font-size: 1rem;
+        font-family: "Segoe UI", sans-serif;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# ✅ Sheetsなど初期化
+sheets = init_google_sheets()
+
 def main():
     if "page" not in st.session_state:
-        st.session_state.page = "ホーム"
+        st.session_state.page = "🏠 ホーム"
 
     if st.session_state.page not in ["person_detail", "edit_topic"]:
-        selected = st.sidebar.selectbox("ページを選択", ["ホーム", "ネタ生成", "話す人一覧", "TOPIC一覧"])
+        selected = st.sidebar.selectbox("🚀 メニュー", ["🏠 ホーム", "🎙️ 雑談ネタ生成", "📚 TOPIC一覧", "🧑‍🤝‍🧑 話す人一覧"])
         if selected != st.session_state.page:
             st.session_state.page = selected
 
@@ -426,12 +479,12 @@ def main():
         st.warning(f"Googleスプレッドシートに接続できませんでした: {e}")
         
 
-    if page == "ホーム":
+    if page == "🏠 ホーム":
         show_home_page(client)
-    elif page == "TOPIC一覧":
+    elif page == "📚 TOPIC一覧":
        show_topic_list_page(sheets["topics"], sheets["talk_logs"], sheets["persons"])
 
-    elif page == "ネタ生成":
+    elif page == "🎙️ 雑談ネタ生成":
         st.title("🎙️ 雑談ネタ生成")
          # グループと人物選択
         group_data = sheets["groups"].get_all_records()
@@ -478,7 +531,7 @@ def main():
                 st.error("保存エラー")
                 st.write(e)
 
-    elif page == "話す人一覧":
+    elif page == "🧑‍🤝‍🧑 話す人一覧":
         if sheets:
             show_persons_list_page(sheets)  # sheets辞書ごと渡す
         else:
